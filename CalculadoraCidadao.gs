@@ -3,8 +3,8 @@
   ====================================================================================================================================
   Version:      0.2.3
   Project Page: https://github.com/htadashi/CalculadoraCidadao.gs
-  Copyright:    (c) 2020 by Hugo Tadashi
-                (c) 2020 by André Pereira Henriques
+  Copyright original:    (c) 2020 by Hugo Tadashi
+                         (c) 2020 by André Pereira Henriques
   License:      MIT License
                 https://opensource.org/licenses/MIT
   ------------------------------------------------------------------------------------------------------------------------------------
@@ -48,18 +48,35 @@ function obterFormDataPorData(dataInicial, dataFinal, valor, formDataExtra = {})
  * @OnlyCurrentDoc
  */
 function obterValor(method, formData) {
-  const options = {
-    'method': 'post',
-    'payload': formData,
-  };
-  try {
-    const response = UrlFetchApp.fetch(`https://www3.bcb.gov.br/CALCIDADAO/publico/${method}.do?method=${method}`, options);
-    const html = response.getContentText('ISO-8859-1');
-    const valorCorrigido = parseResponse(html);
-    return valorCorrigido;
-  } catch (excecao) {
-    throw new Error(`falha na extração de dados da página no BCB: ${excecao.message}`);
+  const MAX_TENTATIVAS = 30; // Evita loop infinito
+  let tentativas = 0;
+  
+  // Cria uma cópia do formData para não alterar o original
+  let formDataAtual = { ...formData };
+  
+  while (tentativas < MAX_TENTATIVAS) {
+    try {
+      const options = {
+        'method': 'post',
+        'payload': formDataAtual,
+      };
+      const response = UrlFetchApp.fetch(`https://www3.bcb.gov.br/CALCIDADAO/publico/${method}.do?method=${method}`, options);
+      const html = response.getContentText('ISO-8859-1');
+      const valorCorrigido = parseResponse(html);
+      return valorCorrigido;
+    } catch (excecao) {
+      if (excecao.message.includes("Altere o período solicitado")) {
+        // Decrementa a dataFinal em 1 dia
+        const dataFinalDate = Utilities.parseDate(formDataAtual.dataFinal, 'GMT', 'dd/MM/yyyy');
+        dataFinalDate.setDate(dataFinalDate.getDate() - 1);
+        formDataAtual.dataFinal = Utilities.formatDate(dataFinalDate, 'GMT', 'dd/MM/yyyy');
+        tentativas++;
+      } else {
+        throw new Error(`Falha na extração de dados da página no BCB: ${excecao.message}`);
+      }
+    }
   }
+  throw new Error(`Não foi possível obter o valor após ${MAX_TENTATIVAS} tentativas.`);
 }
 
 /**
